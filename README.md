@@ -4,10 +4,10 @@ A sophisticated multi-agent system built with CrewAI for comprehensive product a
 
 ## Features
 
-- Orchestrator agent for task coordination
-- Review Analysis Agent for product review analysis
-- Company Analysis Agent for company reliability assessment
-- Integration with Google's Vertex AI and Gemini Pro
+- CrewAI-based agent orchestration
+- Specialized agents for review and company analysis
+- Integration with Google's Gemini Pro
+- Custom web search and scraping tools
 - FastAPI-based REST API
 
 ## Setup
@@ -27,6 +27,7 @@ pip install -r requirements.txt
 Create a `.env` file with:
 ```
 GOOGLE_API_KEY=your_api_key
+SERPER_API_KEY=your_serper_api_key
 ```
 
 4. Run the application:
@@ -40,13 +41,13 @@ uvicorn app.main:app --reload
 .
 ├── app/
 │   ├── agents/
-│   │   ├── orchestrator.py
-│   │   ├── review_analyzer.py
-│   │   └── company_analyzer.py
+│   │   └── orchestrator.py
 │   ├── models/
 │   │   └── schemas.py
 │   ├── services/
 │   │   └── google_ai.py
+│   ├── tools/
+│   │   └── crew_tools.py
 │   └── main.py
 ├── tests/
 ├── requirements.txt

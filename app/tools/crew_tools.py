@@ -5,27 +5,47 @@ from bs4 import BeautifulSoup
 import json
 from datetime import datetime
 import logging
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Get API key from environment variable
+SERPER_API_KEY = os.getenv('SERPER_API_KEY')
+if not SERPER_API_KEY:
+    logger.warning("SERPER_API_KEY environment variable not set. Web search functionality will be limited.")
+
 class WebSearchTool(BaseTool):
     name: str = "web_search"
     description: str = "Search the web for information about products and companies"
 
-    async def _run(self, query: str) -> Dict[str, Any]:
-        logger.info(f"WebSearchTool: Starting search with query: {query}")
+    def _run(self, query: str, brand_name: str = None) -> Dict[str, Any]:
+        logger.info(f"WebSearchTool: Starting search with query: {query}, brand: {brand_name}")
         try:
-            # Use a search API (you can replace this with your preferred search API)
+            if not SERPER_API_KEY:
+                raise Exception("SERPER_API_KEY environment variable not set")
+
+            # Enhance search query with brand name if provided
+            enhanced_query = query
+            if brand_name:
+                enhanced_query = f"{brand_name} {query}"
+                logger.info(f"WebSearchTool: Enhanced query with brand name: {enhanced_query}")
+
+            # Use Serper API for Google search
             logger.info("WebSearchTool: Making request to Serper API")
-            response = requests.get(
-                f"https://api.serper.dev/search",
+            response = requests.post(
+                "https://google.serper.dev/search",
                 headers={
-                    "X-API-KEY": "c5fef1fe2d1c1d4ba974d3952c7ab4bd7c82ee0b",  # Replace with your API key
+                    "X-API-KEY": SERPER_API_KEY,
                     "Content-Type": "application/json"
                 },
-                json={"q": query}
+                json={
+                    "q": enhanced_query,
+                    "gl": "us",  # Search in US
+                    "hl": "en",  # Results in English
+                    "num": 10    # Number of results
+                }
             )
             
             if response.status_code != 200:
@@ -35,14 +55,31 @@ class WebSearchTool(BaseTool):
 
             data = response.json()
             logger.info(f"WebSearchTool: Successfully retrieved {len(data.get('organic', []))} search results")
+            
+            # Format the results for better readability
+            formatted_results = []
+            for result in data.get('organic', []):
+                formatted_results.append({
+                    'title': result.get('title', ''),
+                    'link': result.get('link', ''),
+                    'snippet': result.get('snippet', ''),
+                    'position': result.get('position', 0),
+                    'brand_name': brand_name  # Include brand name in results
+                })
+            
             return {
-                'search_results': data.get('organic', []),
+                'search_results': formatted_results,
+                'brand_name': brand_name,
+                'original_query': query,
+                'enhanced_query': enhanced_query,
                 'timestamp': datetime.utcnow().isoformat()
             }
         except Exception as e:
             logger.error(f"WebSearchTool: Error occurred: {str(e)}")
             return {
                 'error': str(e),
+                'brand_name': brand_name,
+                'original_query': query,
                 'timestamp': datetime.utcnow().isoformat()
             }
 
@@ -50,7 +87,7 @@ class WebScrapingTool(BaseTool):
     name: str = "web_scrape"
     description: str = "Scrape product information from web pages"
 
-    async def _run(self, url: str) -> Dict[str, Any]:
+    def _run(self, url: str) -> Dict[str, Any]:
         logger.info(f"WebScrapingTool: Starting scrape for URL: {url}")
         try:
             headers = {

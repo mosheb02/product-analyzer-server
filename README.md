@@ -32,8 +32,10 @@ SERPER_API_KEY=your_serper_api_key
 
 4. Run the application:
 ```bash
-uvicorn app.main:app --reload
+python -m app.api.endpoints.product_analyzer
 ```
+
+The API will be available at `http://localhost:8000`.
 
 ## Project Structure
 
@@ -42,13 +44,18 @@ uvicorn app.main:app --reload
 ├── app/
 │   ├── agents/
 │   │   └── orchestrator.py
+│   │   └── sub_agents/
+│   │       ├── review_analyzer/
+│   │       └── company_analyzer/
+│   ├── api/
+│   │   └── endpoints/
+│   │       └── product_analyzer.py
 │   ├── models/
 │   │   └── schemas.py
 │   ├── services/
 │   │   └── google_ai.py
 │   ├── tools/
 │   │   └── crew_tools.py
-│   └── main.py
 ├── tests/
 ├── requirements.txt
 └── README.md
@@ -56,8 +63,20 @@ uvicorn app.main:app --reload
 
 ## API Endpoints
 
-- POST `/analyze-product`: Submit a product for analysis
-- GET `/analysis/{analysis_id}`: Get analysis results
+- POST `/api/v1/analyze-product`: Submit a product for analysis
+
+### Example Request
+```json
+{
+  "product_url": "https://example.com/product",
+  "product_name": "Example Product",
+  "dry_run": true
+}
+```
+- `dry_run` (optional, default: false): If true, returns a mock response without calling the LLM (useful for testing).
+
+### API Docs
+Interactive documentation is available at: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ## License
 

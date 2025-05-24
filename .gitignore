@@ -1,3 +1,9 @@
+# Virtual Environment
+venv/
+env/
+ENV/
+.env
+
 # Python
 __pycache__/
 *.py[cod]
@@ -20,15 +26,6 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environment
-venv/
-env/
-ENV/
-.env
-.venv
-env.bak/
-venv.bak/
-
 # IDE
 .idea/
 .vscode/
@@ -39,7 +36,6 @@ venv.bak/
 # Logs
 *.log
 logs/
-log/
 
 # Local development settings
 .env.local
@@ -56,36 +52,4 @@ htmlcov/
 nosetests.xml
 coverage.xml
 *.cover
-.hypothesis/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# pyenv
-.python-version
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# pytest
-.pytest_cache/
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg 
+.hypothesis/ 

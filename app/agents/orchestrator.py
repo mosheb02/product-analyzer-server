@@ -1,4 +1,4 @@
-from crewai import Agent, Task, Crew, Process
+from crewai import Crew, Process
 from app.services.google_ai import GoogleAIService
 from app.tools.crew_tools import WebSearchTool, WebScrapingTool
 from typing import Dict, Any
@@ -8,6 +8,11 @@ import json
 import logging
 from langchain_google_genai import ChatGoogleGenerativeAI
 import os
+
+from app.agents.sub_agents.review_analyzer.agent import ReviewAnalyzerAgent
+from app.agents.sub_agents.company_analyzer.agent import CompanyAnalyzerAgent
+from app.agents.sub_agents.review_analyzer.tasks import ReviewAnalyzerTasks
+from app.agents.sub_agents.company_analyzer.tasks import CompanyAnalyzerTasks
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -25,167 +30,34 @@ class OrchestratorAgent:
             model="gemini-1.5-pro",
             google_api_key="AIzaSyC9CGxIjXQjBPSPudmZYSiGTC7p44wHF94"
         )
+        
+        # Initialize sub-agents
+        self.review_analyzer = ReviewAnalyzerAgent(self.llm, self.web_search, self.web_scrape)
+        self.company_analyzer = CompanyAnalyzerAgent(self.llm, self.web_search)
+        
         logger.info("OrchestratorAgent initialized successfully")
-
-    def _parse_agent_result(self, result: str) -> Dict[str, Any]:
-        logger.info(f"******Parsing agent result: {result}")
-        try:
-            # Clean up the result string by removing markdown code blocks
-            cleaned_result = result.replace("```json", "").replace("```", "").strip()
-            # Parse the cleaned JSON
-            parsed_result = json.loads(cleaned_result)
-            
-            # Calculate grade based on reliability score
-            if "reliability_score" in parsed_result:
-                score = parsed_result["reliability_score"]
-                if isinstance(score, (int, float)):
-                    if score >= 9:
-                        grade = "A+"
-                    elif score >= 8:
-                        grade = "A"
-                    elif score >= 7:
-                        grade = "B+"
-                    elif score >= 6:
-                        grade = "B"
-                    elif score >= 5:
-                        grade = "C"
-                    else:
-                        grade = "D"
-                    parsed_result["grade"] = grade
-            
-            logger.info("Successfully parsed agent result as JSON")
-            return parsed_result
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse result as JSON: {str(e)}, returning as raw text")
-            return {"error": f"Failed to parse result: {str(e)}"}
 
     async def analyze_product(self, product_url: str, product_name: str) -> Dict[str, Any]:
         analysis_id = str(uuid.uuid4())
         logger.info(f"Starting product analysis - ID: {analysis_id}, Product: {product_name}, URL: {product_url}")
         
         try:
-            # Create CrewAI agents
-            logger.info("Creating CrewAI agents")
-            review_analyzer = Agent(
-                role='Customer Review Analyst',
-                goal='Analyze and summarize customer reviews and experiences with the specific product',
-                backstory="""You are an expert in analyzing customer reviews and product experiences. 
-                Your specialty is reading through customer feedback, identifying patterns, and providing 
-                actionable insights about specific products. You focus ONLY on what actual customers 
-                are saying about their experiences with the product, not about the company in general.""",
-                tools=[self.web_search, self.web_scrape],
-                llm=self.llm,
-                verbose=True
-            )
-
-            company_analyzer = Agent(
-                role='Company Reliability Analyst',
-                goal='Analyze company-level information and reliability metrics',
-                backstory="""You are a seasoned company analyst specializing in evaluating business 
-                reliability and market position. You focus on company-level information such as 
-                corporate history, legal issues, safety records, and market standing. You do NOT 
-                analyze specific product reviews or customer experiences.""",
-                tools=[self.web_search],
-                llm=self.llm,
-                verbose=True
-            )
-            logger.info("CrewAI agents created successfully")
+            # Create agents
+            logger.info("Creating agents")
+            review_agent = self.review_analyzer.create_agent()
+            company_agent = self.company_analyzer.create_agent()
+            logger.info("Agents created successfully")
 
             # Create tasks
             logger.info("Creating analysis tasks")
-            review_task = Task(
-                description=f"""TASK: Analyze customer reviews for the specific product: {product_name}
-                URL: {product_url}
-                
-                CRITICAL INSTRUCTIONS:
-                1. You must ONLY analyze customer reviews and experiences with this specific product
-                2. Do NOT analyze company information or general company reliability
-                3. Focus on what actual customers are saying about their experiences
-                4. Use the web_scrape tool to get reviews from the product URL
-                5. Use web_search to find additional customer reviews from other sources
-                
-                REQUIRED OUTPUT FORMAT:
-                {{
-                    "average_customer_rating": <number between 0-10>,
-                    "total_reviews_analyzed": <number of reviews analyzed>,
-                    "customer_sentiment_summary": <"positive", "negative", or "neutral">,
-                    "key_positive_points": [
-                        "<specific positive aspect from reviews>",
-                        "<another positive aspect>"
-                    ],
-                    "key_negative_points": [
-                        "<specific negative aspect from reviews>",
-                        "<another negative aspect>"
-                    ],
-                    "common_issues": [
-                        "<specific issue mentioned in reviews>",
-                        "<another common issue>"
-                    ],
-                    "overall_product_reliability_score": <number between 0-10>
-                }}
-                
-                EXAMPLE:
-                {{
-                    "average_customer_rating": 8.5,
-                    "total_reviews_analyzed": 500,
-                    "customer_sentiment_summary": "positive",
-                    "key_positive_points": [
-                        "Excellent picture quality",
-                        "Good sound system",
-                        "Easy to set up"
-                    ],
-                    "key_negative_points": [
-                        "Expensive compared to competitors",
-                        "Some software glitches",
-                        "Remote control issues"
-                    ],
-                    "common_issues": [
-                        "Occasional software freezes",
-                        "Remote control connectivity problems",
-                        "Initial setup can be confusing"
-                    ],
-                    "overall_product_reliability_score": 8
-                }}""",
-                agent=review_analyzer
-            )
-
-            company_task = Task(
-                description=f"""TASK: Analyze company information for: {product_name}
-                URL: {product_url}
-                
-                CRITICAL INSTRUCTIONS:
-                1. You must ONLY analyze company-level information
-                2. Do NOT analyze specific product reviews or customer experiences
-                3. Focus on the company's history, legal issues, safety records, and market position
-                4. Use web_search to find company information
-                
-                REQUIRED OUTPUT FORMAT:
-                {{
-                    "company_name": "<name of the company>",
-                    "years_in_market": "<how long the company has been in business>",
-                    "safety_issues": "<any reported safety concerns at company level>",
-                    "legal_issues": "<any legal challenges or lawsuits>",
-                    "company_reliability_score": <number between 0-10>,
-                    "market_position": "<company's position in the market>"
-                }}
-                
-                EXAMPLE:
-                {{
-                    "company_name": "LG Electronics",
-                    "years_in_market": "Since 1958",
-                    "safety_issues": "Some reported issues with older TV models",
-                    "legal_issues": "Past patent disputes and class action lawsuits",
-                    "company_reliability_score": 7,
-                    "market_position": "Leading manufacturer in premium TV segment"
-                }}""",
-                agent=company_analyzer
-            )
+            review_task = ReviewAnalyzerTasks.create_review_analysis_task(review_agent, product_name, product_url)
+            company_task = CompanyAnalyzerTasks.create_company_analysis_task(company_agent, product_name, product_url)
             logger.info("Analysis tasks created successfully")
 
             # Create and run the crew
             logger.info("Creating and running the crew")
             crew = Crew(
-                agents=[review_analyzer, company_analyzer],
+                agents=[review_agent, company_agent],
                 tasks=[review_task, company_task],
                 process=Process.sequential,
                 verbose=True
@@ -228,23 +100,47 @@ class OrchestratorAgent:
                     try:
                         logger.info(f"#############TASK OUTPUT: {output}")
                         # Get the result from the TaskOutput object
-                        if hasattr(output, 'result'):                            
+                        if hasattr(output, 'result'):
                             logger.info(f"+++++++++Processing task output result: {output.result[:200]}...")
+                            # Clean the output and extract just the JSON part
                             cleaned_output = output.result.replace("```json", "").replace("```", "").strip()
-                            parsed_output = json.loads(cleaned_output)
-                            logger.info(f"%%%%%%%%%%%parsed_output: {parsed_output}")
-
-                            # Determine which analysis this is
-                            if "average_customer_rating" in parsed_output:
-                                logger.info("Found review analysis")
-                                review_result = parsed_output
-                            elif "company_name" in parsed_output:
-                                logger.info("Found company analysis")
-                                company_result = parsed_output
+                            
+                            # Find the first complete JSON object
+                            try:
+                                # Find the first occurrence of a complete JSON object
+                                start_idx = cleaned_output.find('{')
+                                if start_idx != -1:
+                                    # Find the matching closing brace
+                                    brace_count = 1
+                                    end_idx = start_idx + 1
+                                    while brace_count > 0 and end_idx < len(cleaned_output):
+                                        if cleaned_output[end_idx] == '{':
+                                            brace_count += 1
+                                        elif cleaned_output[end_idx] == '}':
+                                            brace_count -= 1
+                                        end_idx += 1
+                                    
+                                    if brace_count == 0:
+                                        # Extract just the JSON object
+                                        json_str = cleaned_output[start_idx:end_idx]
+                                        parsed_output = json.loads(json_str)
+                                        logger.info(f"%%%%%%%%%%%parsed_output: {parsed_output}")
+                                        
+                                        # Determine which analysis this is
+                                        if "average_customer_rating" in parsed_output:
+                                            logger.info("Found review analysis")
+                                            review_result = parsed_output
+                                        elif "company_name" in parsed_output:
+                                            logger.info("Found company analysis")
+                                            company_result = parsed_output
+                                    else:
+                                        logger.error("Could not find complete JSON object")
+                                else:
+                                    logger.error("No JSON object found in output")
+                            except json.JSONDecodeError as e:
+                                logger.error(f"Failed to parse JSON: {str(e)}")
                         else:
                             logger.warning("Task output has no result attribute")
-                    except json.JSONDecodeError as e:
-                        logger.error(f"Failed to parse task output: {str(e)}")
                     except Exception as e:
                         logger.error(f"Error processing task output: {str(e)}")
                 

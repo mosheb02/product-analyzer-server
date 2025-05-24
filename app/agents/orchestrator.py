@@ -37,21 +37,113 @@ class OrchestratorAgent:
         
         logger.info("OrchestratorAgent initialized successfully")
 
-    async def analyze_product(self, product_url: str, product_name: str) -> Dict[str, Any]:
+    def _generate_mock_review_analysis(self, product_name: str) -> Dict[str, Any]:
+        """Generate a mock review analysis for testing."""
+        return {
+            "average_customer_rating": 8.5,
+            "total_reviews_analyzed": 150,
+            "customer_sentiment_summary": "positive",
+            "key_positive_points": [
+                "Excellent build quality",
+                "Great value for money",
+                "Easy to use",
+                "Reliable performance",
+                "Good customer support"
+            ],
+            "key_negative_points": [
+                "Some minor quality control issues",
+                "Documentation could be better",
+                "Slightly expensive"
+            ],
+            "common_issues": [
+                "Occasional software glitches",
+                "Some users report shipping delays",
+                "Minor assembly issues"
+            ],
+            "overall_product_reliability_score": 8.5
+        }
+
+    def _generate_mock_company_analysis(self, product_name: str) -> Dict[str, Any]:
+        """Generate a mock company analysis for testing."""
+        return {
+            "company_name": "Example Corp",
+            "years_in_market": "15+ years",
+            "safety_issues": "No major safety concerns reported",
+            "legal_issues": "Minor patent disputes resolved in 2022",
+            "company_reliability_score": 8.0,
+            "market_position": "Leading manufacturer in the mid-range segment"
+        }
+
+    async def analyze_product(self, product_url: str, product_name: str, brand_name: str = None, dry_run: bool = False) -> Dict[str, Any]:
         analysis_id = str(uuid.uuid4())
-        logger.info(f"Starting product analysis - ID: {analysis_id}, Product: {product_name}, URL: {product_url}")
+        logger.info(f"Starting product analysis - ID: {analysis_id}, Product: {product_name}, Brand: {brand_name}, URL: {product_url}, Dry Run: {dry_run}")
         
         try:
+            if dry_run:
+                logger.info("Running in dry run mode - generating mock responses")
+                review_result = self.review_analyzer.generate_mock_analysis(product_name)
+                company_result = self.company_analyzer.generate_mock_analysis(product_name)
+                
+                # Add brand name to results
+                if brand_name:
+                    review_result["brand_name"] = brand_name
+                    company_result["brand_name"] = brand_name
+                    company_result["company_name"] = brand_name
+                # Add final_summary to results
+                review_result["final_summary"] = f"{product_name} by {brand_name or 'the manufacturer'} is generally well-received, with most customers highlighting its reliability and value, though some minor issues are noted."
+                company_result["final_summary"] = f"{brand_name or 'The company'} is regarded as reliable with a strong market position and few safety or legal concerns."
+                # Compose root-level final_summary
+                root_final_summary = (
+                    f"{review_result['final_summary']} {company_result['final_summary']} Overall, the product and its manufacturer are considered trustworthy and a good choice in their category."
+                )[:350]  # ~50 words max
+                
+                # Calculate final grade
+                final_grade = "N/A"
+                try:
+                    review_score = float(review_result["overall_product_reliability_score"])
+                    company_score = float(company_result["company_reliability_score"])
+                    avg_score = (review_score + company_score) / 2
+                    logger.info(f"Calculated average score: {avg_score}")
+                    
+                    if avg_score >= 9:
+                        final_grade = "A+"
+                    elif avg_score >= 8:
+                        final_grade = "A"
+                    elif avg_score >= 7:
+                        final_grade = "B+"
+                    elif avg_score >= 6:
+                        final_grade = "B"
+                    elif avg_score >= 5:
+                        final_grade = "C"
+                    else:
+                        final_grade = "D"
+                    logger.info(f"Final grade: {final_grade}")
+                except (ValueError, TypeError) as e:
+                    logger.error(f"Error calculating final grade: {str(e)}")
+                    final_grade = "N/A"
+                
+                return {
+                    "analysis_id": analysis_id,
+                    "status": "completed",
+                    "review_analysis": review_result,
+                    "company_analysis": company_result,
+                    "final_grade": final_grade,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "dry_run": True,
+                    "brand_name": brand_name,
+                    "final_summary": root_final_summary
+                }
+
             # Create agents
             logger.info("Creating agents")
-            review_agent = self.review_analyzer.create_agent()
-            company_agent = self.company_analyzer.create_agent()
+            review_agent = self.review_analyzer.create_agent(dry_run=dry_run)
+            company_agent = self.company_analyzer.create_agent(dry_run=dry_run)
             logger.info("Agents created successfully")
 
             # Create tasks
             logger.info("Creating analysis tasks")
-            review_task = ReviewAnalyzerTasks.create_review_analysis_task(review_agent, product_name, product_url)
-            company_task = CompanyAnalyzerTasks.create_company_analysis_task(company_agent, product_name, product_url)
+            review_task = ReviewAnalyzerTasks.create_review_analysis_task(review_agent, product_name, product_url, brand_name)
+            company_task = CompanyAnalyzerTasks.create_company_analysis_task(company_agent, product_name, product_url, brand_name)
             logger.info("Analysis tasks created successfully")
 
             # Create and run the crew
@@ -175,13 +267,30 @@ class OrchestratorAgent:
                     logger.error(f"Error calculating final grade: {str(e)}")
                     final_grade = "N/A"
             
+            # Compose root-level final_summary
+            root_final_summary = ""
+            try:
+                review_summary = review_result.get("final_summary", "")
+                company_summary = company_result.get("final_summary", "")
+                if review_summary and company_summary:
+                    root_final_summary = (
+                        f"{review_summary} {company_summary} Overall, the product and its manufacturer are considered trustworthy and a good choice in their category."
+                    )[:350]  # ~50 words max
+                else:
+                    root_final_summary = "Summary information from one or both agents is missing."
+            except Exception as e:
+                root_final_summary = f"Could not generate overall summary: {str(e)}"
+            
+            # Ensure all required fields are present
             final_result = {
                 "analysis_id": analysis_id,
                 "status": "completed",
-                "review_analysis": review_result,
-                "company_analysis": company_result,
+                "review_analysis": review_result if review_result else {"error": "No review analysis available"},
+                "company_analysis": company_result if company_result else {"error": "No company analysis available"},
                 "final_grade": final_grade,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
+                "dry_run": False,
+                "final_summary": root_final_summary
             }
             logger.info(f"Analysis completed successfully - ID: {analysis_id}")
             return final_result
@@ -192,5 +301,9 @@ class OrchestratorAgent:
                 "analysis_id": analysis_id,
                 "status": "error",
                 "error_message": f"Crew execution failed: {str(e)}",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
+                "review_analysis": {"error": "Analysis failed"},
+                "company_analysis": {"error": "Analysis failed"},
+                "final_grade": "N/A",
+                "dry_run": False
             } 

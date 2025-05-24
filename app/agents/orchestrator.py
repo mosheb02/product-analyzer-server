@@ -93,9 +93,12 @@ class OrchestratorAgent:
                 review_result["final_summary"] = f"{product_name} by {brand_name or 'the manufacturer'} is generally well-received, with most customers highlighting its reliability and value, though some minor issues are noted."
                 company_result["final_summary"] = f"{brand_name or 'The company'} is regarded as reliable with a strong market position and few safety or legal concerns."
                 # Compose root-level final_summary
-                root_final_summary = (
-                    f"{review_result['final_summary']} {company_result['final_summary']} Overall, the product and its manufacturer are considered trustworthy and a good choice in their category."
-                )[:350]  # ~50 words max
+                combined_summary = f"{review_result['final_summary']} {company_result['final_summary']} Overall, the product and its manufacturer are considered trustworthy and a good choice in their category."
+                # Ensure we don't cut mid-sentence
+                root_final_summary = combined_summary[:350]  # Start with ~50 words
+                last_period = root_final_summary.rfind('.')
+                if last_period > 0:
+                    root_final_summary = root_final_summary[:last_period + 1]
                 
                 # Calculate final grade
                 final_grade = "N/A"
@@ -273,9 +276,12 @@ class OrchestratorAgent:
                 review_summary = review_result.get("final_summary", "")
                 company_summary = company_result.get("final_summary", "")
                 if review_summary and company_summary:
-                    root_final_summary = (
-                        f"{review_summary} {company_summary} Overall, the product and its manufacturer are considered trustworthy and a good choice in their category."
-                    )[:350]  # ~50 words max
+                    combined_summary = f"{review_summary} {company_summary} Overall, the product and its manufacturer are considered trustworthy and a good choice in their category."
+                    # Ensure we don't cut mid-sentence
+                    root_final_summary = combined_summary[:350]  # Start with ~50 words
+                    last_period = root_final_summary.rfind('.')
+                    if last_period > 0:
+                        root_final_summary = root_final_summary[:last_period + 1]
                 else:
                     root_final_summary = "Summary information from one or both agents is missing."
             except Exception as e:
